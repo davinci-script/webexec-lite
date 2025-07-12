@@ -110,18 +110,19 @@ func handleWithExternal(w http.ResponseWriter, r *http.Request, handler HandlerC
 	cmd := exec.Command(cmdPath, args...)
 	cmd.Env = os.Environ()
 	cmd.Stdin = r.Body
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput() // Capture both stdout and stderr
 	status := 200
 	if err != nil {
 		w.WriteHeader(500)
-		w.Write([]byte("Handler error: " + err.Error()))
+		w.Write(output) // Show the actual error output from the handler
 		status = 500
+	} else {
+		// Add Content-Type header if it's not set
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		}
+		w.Write(output)
 	}
-	// Add Content-Type header if it's not set
-	if w.Header().Get("Content-Type") == "" {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	}
-	w.Write(output)
 	if handlerLogger != nil {
 		handlerLogger.Printf("%s | %s | %v | %s | %s %s | %s | status=%d", time.Now().Format(time.RFC3339), cmdPath, args, filePath, r.Method, r.URL.RequestURI(), r.RemoteAddr, status)
 	}
