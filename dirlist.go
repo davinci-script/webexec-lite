@@ -32,7 +32,7 @@ func RenderDirList(w http.ResponseWriter, r *http.Request, dirPath, urlPath stri
 		})
 	}
 	sort.Slice(infos, func(i, j int) bool { return infos[i].Name < infos[j].Name })
-	tmplPath := "public/dirlist.html"
+	tmplPath := "html/dirlist.html"
 	tmplContent, err := os.ReadFile(tmplPath)
 	var t *template.Template
 	if err == nil {
