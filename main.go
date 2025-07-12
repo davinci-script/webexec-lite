@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -108,7 +109,49 @@ func handleWithExternal(w http.ResponseWriter, r *http.Request, handler HandlerC
 		args[i] = strings.ReplaceAll(arg, "{filepath}", filePath)
 	}
 	cmd := exec.Command(cmdPath, args...)
-	cmd.Env = os.Environ()
+
+	// Set up CGI environment variables
+	env := os.Environ()
+	env = append(env, "REQUEST_METHOD="+r.Method)
+	env = append(env, "QUERY_STRING="+r.URL.RawQuery)
+	env = append(env, "CONTENT_TYPE="+r.Header.Get("Content-Type"))
+	env = append(env, "CONTENT_LENGTH="+r.Header.Get("Content-Length"))
+	env = append(env, "SCRIPT_NAME="+r.URL.Path)
+	env = append(env, "PATH_INFO="+filePath)
+	env = append(env, "REMOTE_ADDR="+r.RemoteAddr)
+
+	// Pass all HTTP headers as environment variables (HTTP_HEADERNAME)
+	for name, values := range r.Header {
+		key := "HTTP_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+		// Join multiple values with comma, as per HTTP spec
+		val := strings.Join(values, ",")
+		env = append(env, key+"="+val)
+	}
+
+	// Pass Host
+	env = append(env, "HTTP_HOST="+r.Host)
+
+	// Pass cookies as HTTP_COOKIE (already included in headers, but explicit)
+	if cookieHeader := r.Header.Get("Cookie"); cookieHeader != "" {
+		env = append(env, "HTTP_COOKIE="+cookieHeader)
+	}
+
+	// Pass protocol
+	env = append(env, "SERVER_PROTOCOL="+r.Proto)
+
+	// Pass server name and port
+	if host, port, err := net.SplitHostPort(r.Host); err == nil {
+		env = append(env, "SERVER_NAME="+host)
+		env = append(env, "SERVER_PORT="+port)
+	} else {
+		env = append(env, "SERVER_NAME="+r.Host)
+	}
+
+	// Pass request URI
+	env = append(env, "REQUEST_URI="+r.RequestURI)
+
+	cmd.Env = env
+
 	cmd.Stdin = r.Body
 	output, err := cmd.CombinedOutput() // Capture both stdout and stderr
 	status := 200
