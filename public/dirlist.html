@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Index of {{.Path}}</title>
+<style>
+body { background: #f6f8fa; color: #222; font-family: 'Segoe UI', 'Roboto', Arial, sans-serif; margin: 0; padding: 0; }
+.container { max-width: 700px; margin: 2.5rem auto; background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); padding: 2.5rem 2rem; }
+h1 { font-size: 2rem; margin-bottom: 1.5rem; color: #457b9d; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 0.7rem 0.5rem; text-align: left; }
+th { border-bottom: 2px solid #e0e5ec; color: #457b9d; font-size: 1.08rem; }
+td { border-bottom: 1px solid #f0f2f5; font-size: 1.02rem; }
+tr:hover { background: #f1f7fa; }
+.icon { display: inline-block; width: 1.2em; text-align: center; margin-right: 0.5em; }
+a { color: #1d3557; text-decoration: none; font-weight: 500; }
+a:hover { color: #e63946; }
+@media (max-width: 600px) { .container { padding: 1rem 0.3rem; } th, td { padding: 0.5rem 0.2rem; } }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Index of {{.Path}}</h1>
+<table>
+<thead><tr><th>Name</th><th>Size</th><th>Last Modified</th></tr></thead>
+<tbody>
+{{if ne .Path "/"}}
+<tr><td colspan="3"><a href="..">⬅️ Parent Directory</a></td></tr>
+{{end}}
+{{range .Files}}
+<tr>
+<td><a href="{{$.Prefix}}{{.Name}}{{if .IsDir}}/{{end}}"><span class="icon">{{if .IsDir}}📁{{else}}📄{{end}}</span>{{.Name}}{{if .IsDir}}/{{end}}</a></td>
+<td>{{if .IsDir}}-{{else}}{{.Size}}{{end}}</td>
+<td>{{.ModTime}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+</body>
+</html> 
