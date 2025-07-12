@@ -8,8 +8,10 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -19,11 +21,17 @@ type ErrorPages struct {
 	Internal string `json:"500"`
 }
 
+type HandlerConfig struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+}
+
 type Config struct {
-	HomeDir       string     `json:"homedir"`
-	Port          string     `json:"port"`
-	ErrorPages    ErrorPages `json:"error_pages"`
-	DefaultIndexes []string  `json:"default_indexes"`
+	HomeDir        string                  `json:"homedir"`
+	Port           string                  `json:"port"`
+	ErrorPages     ErrorPages              `json:"error_pages"`
+	DefaultIndexes []string                `json:"default_indexes"`
+	Handlers       map[string]HandlerConfig `json:"handlers"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -61,6 +69,49 @@ func tryServeIndex(w http.ResponseWriter, r *http.Request, dirPath string, index
 	return false
 }
 
+func isExecutable(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	mode := info.Mode()
+	return mode&0111 != 0 // any execute bit set
+}
+
+func resolveHandlerCommand(cmdPath string) string {
+	if filepath.IsAbs(cmdPath) {
+		return cmdPath
+	}
+	abs, err := filepath.Abs(cmdPath)
+	if err != nil {
+		return cmdPath // fallback to original
+	}
+	return abs
+}
+
+func handleWithExternal(w http.ResponseWriter, r *http.Request, handler HandlerConfig, filePath string) {
+	cmdPath := resolveHandlerCommand(handler.Command)
+	if !isExecutable(cmdPath) {
+		w.WriteHeader(500)
+		w.Write([]byte("Handler executable not found or not executable: " + cmdPath))
+		return
+	}
+	args := make([]string, len(handler.Args))
+	for i, arg := range handler.Args {
+		args[i] = strings.ReplaceAll(arg, "{filepath}", filePath)
+	}
+	cmd := exec.Command(cmdPath, args...)
+	cmd.Env = os.Environ()
+	cmd.Stdin = r.Body
+	output, err := cmd.Output()
+	if err != nil {
+		w.WriteHeader(500)
+		w.Write([]byte("Handler error: " + err.Error()))
+		return
+	}
+	w.Write(output)
+}
+
 func main() {
 	configPath := flag.String("config", "config.json", "Path to config file")
 	homeDirFlag := flag.String("homedir", "", "Directory to serve static files from")
@@ -75,6 +126,7 @@ func main() {
 			Internal: "./public/500.html",
 		},
 		DefaultIndexes: []string{"index.html", "index.htm"},
+		Handlers:       make(map[string]HandlerConfig),
 	}
 
 	if _, err := os.Stat(*configPath); err == nil {
@@ -93,6 +145,9 @@ func main() {
 			}
 			if len(fileCfg.DefaultIndexes) > 0 {
 				cfg.DefaultIndexes = fileCfg.DefaultIndexes
+			}
+			if len(fileCfg.Handlers) > 0 {
+				cfg.Handlers = fileCfg.Handlers
 			}
 		}
 	}
@@ -115,6 +170,11 @@ func main() {
 					return
 				}
 				serveErrorPage(w, 404, cfg.ErrorPages.NotFound, "404 page not found")
+				return
+			}
+			ext := strings.ToLower(filepath.Ext(filePath))
+			if handler, ok := cfg.Handlers[ext]; ok {
+				handleWithExternal(w, r, handler, filePath)
 				return
 			}
 			http.ServeFile(w, r, filePath)

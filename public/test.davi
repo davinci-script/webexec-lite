@@ -1,0 +1,8 @@
+<?davi
+
+$explode = split("Hello World", " ");
+
+echo("Explode: ",$explode);
+
+echo(time())
+?>
