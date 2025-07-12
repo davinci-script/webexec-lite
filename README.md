@@ -11,11 +11,11 @@ This project includes a simple Go web server that serves static files.
 
    ```json
    {
-     "homedir": "./public",
+     "homedir": "./html",
      "port": "80",
      "error_pages": {
-       "404": "./public/404.html",
-       "500": "./public/500.html"
+       "404": "./html/404.html",
+       "500": "./html/500.html"
      }
    }
    ```
@@ -52,6 +52,6 @@ This project includes a simple Go web server that serves static files.
 
 ### Default Home Directory
 
-- The default directory for static files is `./public`.
-- An example `index.html` is provided in the `public` folder.
+- The default directory for static files is `./html`.
+- An example `index.html` is provided in the `html` folder.
 - You can add more files (images, JavaScript, etc.) to this directory to have them served by the web server.
