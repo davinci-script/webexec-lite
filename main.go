@@ -112,6 +112,22 @@ func handleWithExternal(w http.ResponseWriter, r *http.Request, handler HandlerC
 	w.Write(output)
 }
 
+func tryServeIndexWithHandler(w http.ResponseWriter, r *http.Request, dirPath string, indexes []string, handlers map[string]HandlerConfig) bool {
+	for _, idx := range indexes {
+		indexPath := filepath.Join(dirPath, idx)
+		if stat, err := os.Stat(indexPath); err == nil && !stat.IsDir() {
+			ext := strings.ToLower(filepath.Ext(indexPath))
+			if handler, ok := handlers[ext]; ok {
+				handleWithExternal(w, r, handler, indexPath)
+				return true
+			}
+			http.ServeFile(w, r, indexPath)
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 	configPath := flag.String("config", "config.json", "Path to config file")
 	homeDirFlag := flag.String("homedir", "", "Directory to serve static files from")
@@ -166,7 +182,7 @@ func main() {
 		filePath := cfg.HomeDir + r.URL.Path
 		if stat, err := os.Stat(filePath); err == nil {
 			if stat.IsDir() {
-				if tryServeIndex(w, r, filePath, cfg.DefaultIndexes) {
+				if tryServeIndexWithHandler(w, r, filePath, cfg.DefaultIndexes, cfg.Handlers) {
 					return
 				}
 				serveErrorPage(w, 404, cfg.ErrorPages.NotFound, "404 page not found")
