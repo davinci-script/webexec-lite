@@ -117,6 +117,10 @@ func handleWithExternal(w http.ResponseWriter, r *http.Request, handler HandlerC
 		w.Write([]byte("Handler error: " + err.Error()))
 		status = 500
 	}
+	// Add Content-Type header if it's not set
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	}
 	w.Write(output)
 	if handlerLogger != nil {
 		handlerLogger.Printf("%s | %s | %v | %s | %s %s | %s | status=%d", time.Now().Format(time.RFC3339), cmdPath, args, filePath, r.Method, r.URL.RequestURI(), r.RemoteAddr, status)
