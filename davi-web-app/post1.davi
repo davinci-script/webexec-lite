@@ -1,0 +1,12 @@
+<?davi
+
+$explode = split("Hello World", " ");
+
+echo("Explode: ",$explode);
+
+echo(time())
+?>
+
+<h2>Welcome!</h2>
+<p>This is the first post on the <strong>webexec-lite</strong> blog, powered by .davi CGI.</p>
+<p>Stay tuned for more updates and features.</p>
