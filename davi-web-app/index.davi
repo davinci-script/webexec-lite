@@ -4,3 +4,10 @@
   <li><a href="test.davi">Test Blog Post</a></li>
 </ul>
 <p>More posts coming soon!</p>
+<p>Random: <?davi echo(rand(111,999)); ?>
+<br />
+<br />
+
+<p>
+Time: <?davi echo(time()); ?>
+</p>
