@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -32,6 +33,9 @@ type Config struct {
 	ErrorPages     ErrorPages              `json:"error_pages"`
 	DefaultIndexes []string                `json:"default_indexes"`
 	Handlers       map[string]HandlerConfig `json:"handlers"`
+	AccessLog      string                  `json:"access_log"`
+	ErrorLog       string                  `json:"error_log"`
+	HandlerLog     string                  `json:"handler_log"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -89,11 +93,23 @@ func resolveHandlerCommand(cmdPath string) string {
 	return abs
 }
 
-func handleWithExternal(w http.ResponseWriter, r *http.Request, handler HandlerConfig, filePath string) {
+func openLogFile(path string) *os.File {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Printf("Failed to open log file %s: %v", path, err)
+		return nil
+	}
+	return f
+}
+
+func handleWithExternal(w http.ResponseWriter, r *http.Request, handler HandlerConfig, filePath string, handlerLogger *log.Logger) {
 	cmdPath := resolveHandlerCommand(handler.Command)
 	if !isExecutable(cmdPath) {
 		w.WriteHeader(500)
 		w.Write([]byte("Handler executable not found or not executable: " + cmdPath))
+		if handlerLogger != nil {
+			handlerLogger.Printf("%s | %s | %v | %s | %s %s | %s | status=%d", time.Now().Format(time.RFC3339), cmdPath, handler.Args, filePath, r.Method, r.URL.RequestURI(), r.RemoteAddr, 500)
+		}
 		return
 	}
 	args := make([]string, len(handler.Args))
@@ -104,12 +120,16 @@ func handleWithExternal(w http.ResponseWriter, r *http.Request, handler HandlerC
 	cmd.Env = os.Environ()
 	cmd.Stdin = r.Body
 	output, err := cmd.Output()
+	status := 200
 	if err != nil {
 		w.WriteHeader(500)
 		w.Write([]byte("Handler error: " + err.Error()))
-		return
+		status = 500
 	}
 	w.Write(output)
+	if handlerLogger != nil {
+		handlerLogger.Printf("%s | %s | %v | %s | %s %s | %s | status=%d", time.Now().Format(time.RFC3339), cmdPath, args, filePath, r.Method, r.URL.RequestURI(), r.RemoteAddr, status)
+	}
 }
 
 func tryServeIndexWithHandler(w http.ResponseWriter, r *http.Request, dirPath string, indexes []string, handlers map[string]HandlerConfig) bool {
@@ -118,7 +138,7 @@ func tryServeIndexWithHandler(w http.ResponseWriter, r *http.Request, dirPath st
 		if stat, err := os.Stat(indexPath); err == nil && !stat.IsDir() {
 			ext := strings.ToLower(filepath.Ext(indexPath))
 			if handler, ok := handlers[ext]; ok {
-				handleWithExternal(w, r, handler, indexPath)
+				handleWithExternal(w, r, handler, indexPath, nil) // Pass nil for handlerLogger as it's not used here
 				return true
 			}
 			http.ServeFile(w, r, indexPath)
@@ -126,6 +146,23 @@ func tryServeIndexWithHandler(w http.ResponseWriter, r *http.Request, dirPath st
 		}
 	}
 	return false
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+	bytes int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusWriter) Write(b []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(b)
+	w.bytes += n
+	return n, err
 }
 
 func main() {
@@ -165,6 +202,15 @@ func main() {
 			if len(fileCfg.Handlers) > 0 {
 				cfg.Handlers = fileCfg.Handlers
 			}
+			if fileCfg.AccessLog != "" {
+				cfg.AccessLog = fileCfg.AccessLog
+			}
+			if fileCfg.ErrorLog != "" {
+				cfg.ErrorLog = fileCfg.ErrorLog
+			}
+			if fileCfg.HandlerLog != "" {
+				cfg.HandlerLog = fileCfg.HandlerLog
+			}
 		}
 	}
 
@@ -178,25 +224,101 @@ func main() {
 	addr := ":" + cfg.Port
 	server := &http.Server{Addr: addr}
 
+	accessLogPath := "access.log"
+	errorLogPath := "error.log"
+	if cfg.AccessLog != "" {
+		accessLogPath = cfg.AccessLog
+	}
+	if cfg.ErrorLog != "" {
+		errorLogPath = cfg.ErrorLog
+	}
+	accessLog := openLogFile(accessLogPath)
+	errorLog := openLogFile(errorLogPath)
+	defer func() {
+		if accessLog != nil {
+			accessLog.Close()
+		}
+		if errorLog != nil {
+			errorLog.Close()
+		}
+	}()
+	accessLogger := log.New(accessLog, "", log.LstdFlags)
+	errorLogger := log.New(errorLog, "", log.LstdFlags)
+
+	handlerLogPath := "handler.log"
+	if cfg.HandlerLog != "" {
+		handlerLogPath = cfg.HandlerLog
+	}
+	handlerLog := openLogFile(handlerLogPath)
+	defer func() {
+		if handlerLog != nil {
+			handlerLog.Close()
+		}
+	}()
+	handlerLogger := log.New(handlerLog, "", log.LstdFlags)
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		filePath := cfg.HomeDir + r.URL.Path
+		logAccess := func(ww *statusWriter) {
+			remoteHost := r.RemoteAddr
+			if idx := strings.LastIndex(remoteHost, ":"); idx != -1 {
+				remoteHost = remoteHost[:idx]
+			}
+			user := "-"
+			identd := "-"
+			timeStr := time.Now().Format("02/Jan/2006:15:04:05 -0700")
+			requestLine := fmt.Sprintf("%s %s %s", r.Method, r.URL.RequestURI(), r.Proto)
+			status := ww.status
+			bytes := ww.bytes
+			referer := r.Referer()
+			if referer == "" {
+				referer = "-"
+			}
+			userAgent := r.UserAgent()
+			if userAgent == "" {
+				userAgent = "-"
+			}
+			logMsg := fmt.Sprintf("%s %s %s [%s] \"%s\" %d %d \"%s\" \"%s\"", remoteHost, identd, user, timeStr, requestLine, status, bytes, referer, userAgent)
+			if accessLogger != nil {
+				accessLogger.Println(logMsg)
+			}
+		}
 		if stat, err := os.Stat(filePath); err == nil {
 			if stat.IsDir() {
-				if tryServeIndexWithHandler(w, r, filePath, cfg.DefaultIndexes, cfg.Handlers) {
+				ww := &statusWriter{ResponseWriter: w, status: 200}
+				if tryServeIndexWithHandler(ww, r, filePath, cfg.DefaultIndexes, cfg.Handlers) {
+					logAccess(ww)
 					return
 				}
-				serveErrorPage(w, 404, cfg.ErrorPages.NotFound, "404 page not found")
+				ww.status = 404
+				serveErrorPage(ww, 404, cfg.ErrorPages.NotFound, "404 page not found")
+				if errorLogger != nil {
+					errorLogger.Printf("%s %s %d %s", r.Method, r.URL.Path, ww.status, r.RemoteAddr)
+				}
+				logAccess(ww)
 				return
 			}
 			ext := strings.ToLower(filepath.Ext(filePath))
 			if handler, ok := cfg.Handlers[ext]; ok {
-				handleWithExternal(w, r, handler, filePath)
+				ww := &statusWriter{ResponseWriter: w, status: 200}
+				handleWithExternal(ww, r, handler, filePath, handlerLogger)
+				if ww.status >= 400 && errorLogger != nil {
+					errorLogger.Printf("%s %s %d %s", r.Method, r.URL.Path, ww.status, r.RemoteAddr)
+				}
+				logAccess(ww)
 				return
 			}
-			http.ServeFile(w, r, filePath)
+			ww := &statusWriter{ResponseWriter: w, status: 200}
+			http.ServeFile(ww, r, filePath)
+			logAccess(ww)
 			return
 		}
-		serveErrorPage(w, 404, cfg.ErrorPages.NotFound, "404 page not found")
+		ww := &statusWriter{ResponseWriter: w, status: 404}
+		serveErrorPage(ww, 404, cfg.ErrorPages.NotFound, "404 page not found")
+		if errorLogger != nil {
+			errorLogger.Printf("%s %s %d %s", r.Method, r.URL.Path, ww.status, r.RemoteAddr)
+		}
+		logAccess(ww)
 	})
 
 	quit := make(chan os.Signal, 1)

@@ -15,5 +15,8 @@
       "command": "./cgi/davi",
       "args": ["{filepath}"]
     }
-  }
+  },
+  "access_log": "./logs/access.log",
+  "error_log": "./logs/error.log",
+  "handler_log": "./logs/handler.log"
 } 
