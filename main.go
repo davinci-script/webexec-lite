@@ -93,15 +93,6 @@ func resolveHandlerCommand(cmdPath string) string {
 	return abs
 }
 
-func openLogFile(path string) *os.File {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Printf("Failed to open log file %s: %v", path, err)
-		return nil
-	}
-	return f
-}
-
 func handleWithExternal(w http.ResponseWriter, r *http.Request, handler HandlerConfig, filePath string, handlerLogger *log.Logger) {
 	cmdPath := resolveHandlerCommand(handler.Command)
 	if !isExecutable(cmdPath) {
@@ -146,23 +137,6 @@ func tryServeIndexWithHandler(w http.ResponseWriter, r *http.Request, dirPath st
 		}
 	}
 	return false
-}
-
-type statusWriter struct {
-	http.ResponseWriter
-	status int
-	bytes int
-}
-
-func (w *statusWriter) WriteHeader(code int) {
-	w.status = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
-func (w *statusWriter) Write(b []byte) (int, error) {
-	n, err := w.ResponseWriter.Write(b)
-	w.bytes += n
-	return n, err
 }
 
 func main() {
@@ -232,8 +206,8 @@ func main() {
 	if cfg.ErrorLog != "" {
 		errorLogPath = cfg.ErrorLog
 	}
-	accessLog := openLogFile(accessLogPath)
-	errorLog := openLogFile(errorLogPath)
+	accessLog := OpenLogFile(accessLogPath)
+	errorLog := OpenLogFile(errorLogPath)
 	defer func() {
 		if accessLog != nil {
 			accessLog.Close()
@@ -249,7 +223,7 @@ func main() {
 	if cfg.HandlerLog != "" {
 		handlerLogPath = cfg.HandlerLog
 	}
-	handlerLog := openLogFile(handlerLogPath)
+	handlerLog := OpenLogFile(handlerLogPath)
 	defer func() {
 		if handlerLog != nil {
 			handlerLog.Close()
@@ -259,7 +233,7 @@ func main() {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		filePath := cfg.HomeDir + r.URL.Path
-		logAccess := func(ww *statusWriter) {
+		logAccess := func(ww *StatusWriter) {
 			remoteHost := r.RemoteAddr
 			if idx := strings.LastIndex(remoteHost, ":"); idx != -1 {
 				remoteHost = remoteHost[:idx]
@@ -268,8 +242,8 @@ func main() {
 			identd := "-"
 			timeStr := time.Now().Format("02/Jan/2006:15:04:05 -0700")
 			requestLine := fmt.Sprintf("%s %s %s", r.Method, r.URL.RequestURI(), r.Proto)
-			status := ww.status
-			bytes := ww.bytes
+			status := ww.Status
+			bytes := ww.Bytes
 			referer := r.Referer()
 			if referer == "" {
 				referer = "-"
@@ -285,38 +259,38 @@ func main() {
 		}
 		if stat, err := os.Stat(filePath); err == nil {
 			if stat.IsDir() {
-				ww := &statusWriter{ResponseWriter: w, status: 200}
+				ww := &StatusWriter{ResponseWriter: w, Status: 200}
 				if tryServeIndexWithHandler(ww, r, filePath, cfg.DefaultIndexes, cfg.Handlers) {
 					logAccess(ww)
 					return
 				}
-				ww.status = 404
+				ww.Status = 404
 				serveErrorPage(ww, 404, cfg.ErrorPages.NotFound, "404 page not found")
 				if errorLogger != nil {
-					errorLogger.Printf("%s %s %d %s", r.Method, r.URL.Path, ww.status, r.RemoteAddr)
+					errorLogger.Printf("%s %s %d %s", r.Method, r.URL.Path, ww.Status, r.RemoteAddr)
 				}
 				logAccess(ww)
 				return
 			}
 			ext := strings.ToLower(filepath.Ext(filePath))
 			if handler, ok := cfg.Handlers[ext]; ok {
-				ww := &statusWriter{ResponseWriter: w, status: 200}
+				ww := &StatusWriter{ResponseWriter: w, Status: 200}
 				handleWithExternal(ww, r, handler, filePath, handlerLogger)
-				if ww.status >= 400 && errorLogger != nil {
-					errorLogger.Printf("%s %s %d %s", r.Method, r.URL.Path, ww.status, r.RemoteAddr)
+				if ww.Status >= 400 && errorLogger != nil {
+					errorLogger.Printf("%s %s %d %s", r.Method, r.URL.Path, ww.Status, r.RemoteAddr)
 				}
 				logAccess(ww)
 				return
 			}
-			ww := &statusWriter{ResponseWriter: w, status: 200}
+			ww := &StatusWriter{ResponseWriter: w, Status: 200}
 			http.ServeFile(ww, r, filePath)
 			logAccess(ww)
 			return
 		}
-		ww := &statusWriter{ResponseWriter: w, status: 404}
+		ww := &StatusWriter{ResponseWriter: w, Status: 404}
 		serveErrorPage(ww, 404, cfg.ErrorPages.NotFound, "404 page not found")
 		if errorLogger != nil {
-			errorLogger.Printf("%s %s %d %s", r.Method, r.URL.Path, ww.status, r.RemoteAddr)
+			errorLogger.Printf("%s %s %d %s", r.Method, r.URL.Path, ww.Status, r.RemoteAddr)
 		}
 		logAccess(ww)
 	})
