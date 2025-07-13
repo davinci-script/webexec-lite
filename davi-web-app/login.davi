@@ -1,0 +1,30 @@
+<h1>Login</h1>
+<davi>
+session_start();
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $username = trim($_POST['username'] ?? '');
+    $password = trim($_POST['password'] ?? '');
+    $usersFile = __DIR__ . '/../users.txt';
+    $users = file_exists($usersFile) ? file($usersFile, FILE_IGNORE_NEW_LINES) : [];
+    $found = false;
+    foreach ($users as $user) {
+        list($u, $p) = explode(':', $user, 2);
+        if ($u === $username && password_verify($password, $p)) {
+            $_SESSION['user'] = $username;
+            $found = true;
+            break;
+        }
+    }
+    if ($found) {
+        echo '<p style="color:green">Login successful. <a href="index.davi">Go to home</a>.</p>';
+    } else {
+        echo '<p style="color:red">Invalid username or password.</p>';
+    }
+}
+</davi>
+<form method="post">
+    <label>Username: <input type="text" name="username" required></label><br>
+    <label>Password: <input type="password" name="password" required></label><br>
+    <button type="submit">Login</button>
+</form>
+<p><a href="register.davi">No account? Register</a></p> 

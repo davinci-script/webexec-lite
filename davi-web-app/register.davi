@@ -1,0 +1,33 @@
+<h1>Register</h1>
+<davi>
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $username = trim($_POST['username'] ?? '');
+    $password = trim($_POST['password'] ?? '');
+    if ($username && $password) {
+        $usersFile = __DIR__ . '/../users.txt';
+        $users = file_exists($usersFile) ? file($usersFile, FILE_IGNORE_NEW_LINES) : [];
+        $exists = false;
+        foreach ($users as $user) {
+            list($u, $p) = explode(':', $user, 2);
+            if ($u === $username) {
+                $exists = true;
+                break;
+            }
+        }
+        if ($exists) {
+            echo '<p style="color:red">Username already exists.</p>';
+        } else {
+            file_put_contents($usersFile, $username . ':' . password_hash($password, PASSWORD_DEFAULT) . "\n", FILE_APPEND);
+            echo '<p style="color:green">Registration successful. <a href="login.davi">Login here</a>.</p>';
+        }
+    } else {
+        echo '<p style="color:red">Please fill all fields.</p>';
+    }
+}
+</davi>
+<form method="post">
+    <label>Username: <input type="text" name="username" required></label><br>
+    <label>Password: <input type="password" name="password" required></label><br>
+    <button type="submit">Register</button>
+</form>
+<p><a href="login.davi">Already have an account? Login</a></p> 

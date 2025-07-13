@@ -1,0 +1,20 @@
+<h1>
+
+    $_GET: <davi> var_dump($_GET); </davi>
+    $_POST: <davi> var_dump($_POST); </davi>
+    $_REQUEST: <davi> var_dump($_REQUEST); </davi>
+    $_SERVER: <davi> var_dump($_SERVER); </davi>
+    $_ENV: <davi> var_dump($_ENV); </davi>
+    $_COOKIE: <davi> var_dump($_COOKIE); </davi>
+    $_FILES: <davi> var_dump($_FILES); </davi>
+    
+    <davi>
+    session_start();
+    if (isset($_SESSION['user'])) {
+        echo '<p>Logged in as <b>' . htmlspecialchars($_SESSION['user']) . '</b> | <a href="logout.davi">Logout</a></p>';
+    } else {
+        echo '<p><a href="login.davi">Login</a> | <a href="register.davi">Register</a></p>';
+    }
+    </davi>
+    
+</h1>

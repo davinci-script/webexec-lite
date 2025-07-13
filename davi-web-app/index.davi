@@ -1,5 +1,15 @@
 <davi>
+session_start();
+if (isset($_SESSION['user'])) {
+    echo('<h1>Welcome, ' . htmlspecialchars($_SESSION['user']) . '!</h1>');
+} else {
+    echo('<h1>Welcome, guest!</h1>');
+    echo('<p><a href="login.davi">Login</a> or <a href="register.davi">Register</a></p>');
+}
 
-echo($_GET)
+var_dump($_SESSION);
 
 </davi>
+
+
+
